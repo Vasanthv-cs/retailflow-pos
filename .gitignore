@@ -1,0 +1,15 @@
+node_modules/
+build/
+dist/
+coverage/
+target/
+*.class
+.DS_Store
+*.log
+.env*
+!.env.example
+.idea/
+*.iml
+.vscode/
+.aistudio/
+.antigravity/
