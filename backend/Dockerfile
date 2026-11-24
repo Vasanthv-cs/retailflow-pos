@@ -21,7 +21,7 @@ RUN mkdir -p /root/.m2 && \
 # Copy project files and build executable JAR
 COPY pom.xml .
 COPY src ./src
-RUN mvn clean package -DskipTests -B
+RUN mvn clean package -Dmaven.test.skip=true -B
 
 # ------------------------------------------------------------------------------
 # Stage 2: Minimal Production Runtime

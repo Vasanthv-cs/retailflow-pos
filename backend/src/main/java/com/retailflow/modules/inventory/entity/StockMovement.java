@@ -70,6 +70,8 @@ public class StockMovement {
     public void setMovementType(String movementType) { this.movementType = movementType; }
     public Integer getQuantityChange() { return quantityChange; }
     public void setQuantityChange(Integer quantityChange) { this.quantityChange = quantityChange; }
+    public Integer getQuantityDelta() { return quantityChange; }
+    public void setQuantityDelta(Integer quantityDelta) { this.quantityChange = quantityDelta; }
     public Integer getPreviousStock() { return previousStock; }
     public void setPreviousStock(Integer previousStock) { this.previousStock = previousStock; }
     public Integer getNewStock() { return newStock; }

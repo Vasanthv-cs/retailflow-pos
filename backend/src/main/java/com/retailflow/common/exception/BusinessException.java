@@ -29,6 +29,10 @@ public class BusinessException extends RuntimeException {
         return code;
     }
 
+    public String getErrorCode() {
+        return code;
+    }
+
     public HttpStatus getStatus() {
         return status;
     }
