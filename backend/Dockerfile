@@ -14,11 +14,12 @@ WORKDIR /build
 # Install Maven
 RUN apt-get update && apt-get install -y --no-install-recommends maven && rm -rf /var/lib/apt/lists/*
 
-# Cache dependencies layer
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
+# Configure Google Maven Central mirror to prevent HTTP 429 rate-limiting on shared cloud builders
+RUN mkdir -p /root/.m2 && \
+    echo '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"><mirrors><mirror><id>google-maven-central</id><name>Google Maven Central</name><url>https://maven-central.storage-download.googleapis.com/maven2/</url><mirrorOf>central</mirrorOf></mirror></mirrors></settings>' > /root/.m2/settings.xml
 
-# Copy source and build executable JAR
+# Copy project files and build executable JAR
+COPY pom.xml .
 COPY src ./src
 RUN mvn clean package -DskipTests -B
 
