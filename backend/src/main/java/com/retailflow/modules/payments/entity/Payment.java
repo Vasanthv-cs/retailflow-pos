@@ -67,6 +67,8 @@ public class Payment {
     public void setId(String id) { this.id = id; }
     public String getPaymentType() { return paymentType; }
     public void setPaymentType(String paymentType) { this.paymentType = paymentType; }
+    public String getType() { return paymentType; }
+    public void setType(String type) { this.paymentType = type; }
     public String getLinkedDocumentId() { return linkedDocumentId; }
     public void setLinkedDocumentId(String linkedDocumentId) { this.linkedDocumentId = linkedDocumentId; }
     public String getLinkedDocumentNumber() { return linkedDocumentNumber; }

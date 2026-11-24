@@ -108,6 +108,8 @@ public class AuthDtos {
         public Instant getLastLoginAt() { return lastLoginAt; }
     }
 
+    public static class UserDto extends UserResponseDto {}
+
     public static class CreateUserRequest {
         @NotBlank(message = "Full name is required")
         private String name;

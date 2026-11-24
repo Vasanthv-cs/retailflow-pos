@@ -26,6 +26,18 @@ public class PageResponse<T> {
         this.last = page.isLast();
     }
 
+    public static <T> PageResponse<T> of(List<T> content, int page, int size, long totalElements) {
+        PageResponse<T> resp = new PageResponse<>();
+        resp.content = content != null ? content : List.of();
+        resp.page = page;
+        resp.size = size;
+        resp.totalElements = totalElements;
+        resp.totalPages = size > 0 ? (int) Math.ceil((double) totalElements / size) : 0;
+        resp.first = page == 0;
+        resp.last = resp.totalPages == 0 || page >= resp.totalPages - 1;
+        return resp;
+    }
+
     public List<T> getContent() {
         return content;
     }

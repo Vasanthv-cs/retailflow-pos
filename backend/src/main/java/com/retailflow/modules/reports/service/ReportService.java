@@ -251,7 +251,7 @@ public class ReportService {
         BigDecimal totalPayments = BigDecimal.ZERO;
 
         for (Payment p : payments) {
-            if ("Sale".equalsIgnoreCase(p.getType())) {
+            if ("Sale".equalsIgnoreCase(p.getPaymentType()) || "Sale".equalsIgnoreCase(p.getType())) {
                 String method = p.getMethod() != null ? p.getMethod() : "Cash";
                 amounts.put(method, amounts.getOrDefault(method, BigDecimal.ZERO).add(p.getAmount()));
                 counts.put(method, counts.getOrDefault(method, 0) + 1);
