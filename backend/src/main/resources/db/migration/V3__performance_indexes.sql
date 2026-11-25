@@ -1,10 +1,8 @@
 -- RetailFlow POS — Stage 12 Migration: Performance Indexes & Concurrency Optimizations
 -- Ensures sub-millisecond barcode lookups, zero-contention checkout queries, and fast reporting
+-- Note: idx_products_barcode, idx_products_sku, and idx_products_store_cat were already created in V1__init_schema.sql
 
--- 1. Products: Fast lookup by barcode, SKU, category, and low stock filtering
-CREATE INDEX idx_products_barcode ON products (barcode);
-CREATE INDEX idx_products_sku ON products (sku);
-CREATE INDEX idx_products_store_cat ON products (store_id, category_id);
+-- 1. Products: Low stock filtering optimization
 CREATE INDEX idx_products_low_stock ON products (store_id, stock_on_hand, low_stock_threshold);
 
 -- 2. Sales: Range queries by date, cashier performance, and idempotency lookups
