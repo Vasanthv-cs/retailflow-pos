@@ -40,12 +40,12 @@ WORKDIR /app
 # Copy the built standalone Spring Boot executable JAR
 COPY --from=builder --chown=spring:spring /build/target/retailflow-backend-*.jar /app/app.jar
 
-# Container-aware JVM memory configuration optimized for 512MB RAM free tier:
-# - UseContainerSupport: respects cgroup memory limits
-# - MaxRAMPercentage=75: leaves 25% (~128MB) for OS and JVM native memory
+# Container-aware JVM memory configuration optimized for 512MB RAM / 0.1 CPU free tier:
+# - Xms128m / Xmx256m + MaxMetaspaceSize=128m: keeps total RSS ~300MB (safely under 512MB limit)
+# - UseSerialGC: minimal CPU & native memory overhead on single-core/fractional-CPU containers
 # - Xss512k: compact thread stack size to conserve memory
 # - Faster random seed generation & Indian Standard Time
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Xss512k -Djava.security.egd=file:/dev/./urandom -Duser.timezone=Asia/Kolkata"
+ENV JAVA_OPTS="-Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -Xss512k -XX:+UseSerialGC -Djava.security.egd=file:/dev/./urandom -Duser.timezone=Asia/Kolkata"
 ENV SPRING_PROFILES_ACTIVE="prod"
 
 # Ingress port assigned dynamically by Render or local container
@@ -54,4 +54,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:${PORT:-8080}/api/v1/health || exit 1
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]
