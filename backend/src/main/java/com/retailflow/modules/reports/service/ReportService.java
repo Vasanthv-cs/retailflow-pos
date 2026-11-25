@@ -1,5 +1,6 @@
 package com.retailflow.modules.reports.service;
 
+import com.retailflow.common.security.SecurityUtils;
 import com.retailflow.modules.catalog.entity.Category;
 import com.retailflow.modules.catalog.entity.Product;
 import com.retailflow.modules.catalog.repository.CategoryRepository;
@@ -65,6 +66,7 @@ public class ReportService {
         int count = 0;
 
         for (Sale s : sales) {
+            if (!SecurityUtils.matchesCurrentStore(s.getStoreId())) continue;
             if (!"Returned".equalsIgnoreCase(s.getStatus())) {
                 rev = rev.add(s.getTotalAmount());
                 taxBase = taxBase.add(s.getSubtotal());
@@ -96,6 +98,7 @@ public class ReportService {
         int count = 0;
 
         for (Sale s : sales) {
+            if (!SecurityUtils.matchesCurrentStore(s.getStoreId())) continue;
             if (!"Returned".equalsIgnoreCase(s.getStatus())) {
                 rev = rev.add(s.getTotalAmount());
                 taxBase = taxBase.add(s.getSubtotal());
@@ -123,6 +126,7 @@ public class ReportService {
 
         List<Sale> sales = saleRepository.findAll();
         for (Sale s : sales) {
+            if (!SecurityUtils.matchesCurrentStore(s.getStoreId())) continue;
             if (!"Returned".equalsIgnoreCase(s.getStatus())) {
                 for (SaleItem item : s.getItems()) {
                     BigDecimal rate = item.getGstRate() != null ? item.getGstRate() : BigDecimal.ZERO;
@@ -166,6 +170,7 @@ public class ReportService {
                 .collect(Collectors.toMap(Category::getId, c -> c, (a, b) -> a));
 
         Map<String, Product> prodMap = productRepository.findAll().stream()
+                .filter(p -> SecurityUtils.matchesCurrentStore(p.getStoreId()))
                 .collect(Collectors.toMap(Product::getId, p -> p, (a, b) -> a));
 
         Map<String, BigDecimal> catRevenue = new HashMap<>();
@@ -173,6 +178,7 @@ public class ReportService {
         BigDecimal grandTotal = BigDecimal.ZERO;
 
         for (Sale sale : saleRepository.findAll()) {
+            if (!SecurityUtils.matchesCurrentStore(sale.getStoreId())) continue;
             if ("Returned".equalsIgnoreCase(sale.getStatus())) continue;
             for (SaleItem item : sale.getItems()) {
                 Product p = prodMap.get(item.getProductId());
@@ -203,6 +209,7 @@ public class ReportService {
     @Transactional(readOnly = true)
     public List<ReportDtos.ProductSalesSummary> getSalesByProduct() {
         Map<String, Product> prodMap = productRepository.findAll().stream()
+                .filter(p -> SecurityUtils.matchesCurrentStore(p.getStoreId()))
                 .collect(Collectors.toMap(Product::getId, p -> p, (a, b) -> a));
 
         Map<String, BigDecimal> prodRevenue = new HashMap<>();
@@ -210,6 +217,7 @@ public class ReportService {
         Map<String, BigDecimal> prodProfit = new HashMap<>();
 
         for (Sale sale : saleRepository.findAll()) {
+            if (!SecurityUtils.matchesCurrentStore(sale.getStoreId())) continue;
             if ("Returned".equalsIgnoreCase(sale.getStatus())) continue;
             for (SaleItem item : sale.getItems()) {
                 String pid = item.getProductId();
@@ -251,6 +259,7 @@ public class ReportService {
         BigDecimal totalPayments = BigDecimal.ZERO;
 
         for (Payment p : payments) {
+            if (!SecurityUtils.matchesCurrentStore(p.getStoreId())) continue;
             if ("Sale".equalsIgnoreCase(p.getPaymentType()) || "Sale".equalsIgnoreCase(p.getType())) {
                 String method = p.getMethod() != null ? p.getMethod() : "Cash";
                 amounts.put(method, amounts.getOrDefault(method, BigDecimal.ZERO).add(p.getAmount()));
@@ -273,7 +282,9 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public ReportDtos.PurchaseSupplierSummary getPurchaseSupplierSummary() {
-        List<PurchaseOrder> orders = purchaseOrderRepository.findAll();
+        List<PurchaseOrder> orders = purchaseOrderRepository.findAll().stream()
+                .filter(po -> SecurityUtils.matchesCurrentStore(po.getStoreId()))
+                .toList();
         int totalOrders = orders.size();
         BigDecimal totalSpend = orders.stream().map(PurchaseOrder::getTotalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         int pending = (int) orders.stream().filter(po -> po.getStatus() != PurchaseOrderStatus.RECEIVED && po.getStatus() != PurchaseOrderStatus.CANCELLED).count();
@@ -285,7 +296,9 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public ReportDtos.ReturnsSummary getReturnsSummary() {
-        List<ReturnRecord> returns = returnRepository.findAll();
+        List<ReturnRecord> returns = returnRepository.findAll().stream()
+                .filter(r -> SecurityUtils.matchesCurrentStore(r.getStoreId()))
+                .toList();
         int count = returns.size();
         BigDecimal totalRefund = BigDecimal.ZERO;
         int totalUnits = 0;

@@ -19,8 +19,11 @@ public class JwtTokenProvider {
     private final long expirationMs;
 
     public JwtTokenProvider(
-            @Value("${retailflow.jwt.secret:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}") String secret,
+            @Value("${retailflow.jwt.secret}") String secret,
             @Value("${retailflow.jwt.expiration-ms:86400000}") long expirationMs) {
+        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("retailflow.jwt.secret must be configured and at least 32 bytes long");
+        }
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationMs = expirationMs;
     }
@@ -53,6 +56,10 @@ public class JwtTokenProvider {
 
     public String getUserIdFromToken(String token) {
         return parseClaims(token).get("userId", String.class);
+    }
+
+    public Date getExpirationFromToken(String token) {
+        return parseClaims(token).getExpiration();
     }
 
     public boolean validateToken(String token) {

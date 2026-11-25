@@ -23,6 +23,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
 /* Subtle Stripe/Linear scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

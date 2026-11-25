@@ -10,7 +10,7 @@ export interface RealtimeMessage<T = unknown> {
 export type RealtimeEventHandler<T = unknown> = (data: T) => void;
 
 class RealtimeClient {
-  private eventSource: EventSource | null = null;
+  private abortController: AbortController | null = null;
   private listeners: Map<string, Set<RealtimeEventHandler>> = new Map();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -36,54 +36,74 @@ class RealtimeClient {
 
   public connect(storeId = 'store-1') {
     if (typeof window === 'undefined') return;
-    if (this.eventSource && this.eventSource.readyState !== EventSource.CLOSED) {
+    if (this.abortController) {
       return;
     }
 
     const token = getApiAuthToken();
-    const sseUrl = `${API_BASE_URL}/events?storeId=${encodeURIComponent(storeId)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+    const sseUrl = `${API_BASE_URL}/events?storeId=${encodeURIComponent(storeId)}`;
+    const controller = new AbortController();
+    this.abortController = controller;
 
-    try {
-      this.eventSource = new EventSource(sseUrl);
-
-      this.eventSource.onopen = () => {
+    fetch(sseUrl, {
+      credentials: 'include',
+      headers: {
+        Accept: 'text/event-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok || !response.body) {
+          throw new Error(`SSE HTTP ${response.status}`);
+        }
         this.reconnectAttempts = 0;
         console.info('[Realtime] Connected to RetailFlow SSE event stream');
-      };
 
-      this.eventSource.addEventListener('CONNECTED', (event: MessageEvent) => {
-        console.debug('[Realtime] Subscription active:', event.data);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEvent = 'message';
+        let currentData = '';
+
+        while (!controller.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            if (line === '') {
+              if (currentData) {
+                if (currentEvent === 'CONNECTED') {
+                  console.debug('[Realtime] Subscription active:', currentData);
+                } else {
+                  this.handleEvent(currentEvent, currentData);
+                }
+              }
+              currentEvent = 'message';
+              currentData = '';
+            } else if (line.startsWith('event:')) {
+              currentEvent = line.slice(6).trim();
+            } else if (line.startsWith('data:')) {
+              currentData += (currentData ? '\n' : '') + line.slice(5).trim();
+            }
+          }
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          this.disconnect();
+          this.scheduleReconnect(storeId);
+        }
       });
-
-      this.eventSource.addEventListener('INVENTORY_UPDATE', (event: MessageEvent) => {
-        this.handleEvent('INVENTORY_UPDATE', event.data);
-      });
-
-      this.eventSource.addEventListener('NEW_SALE', (event: MessageEvent) => {
-        this.handleEvent('NEW_SALE', event.data);
-      });
-
-      this.eventSource.addEventListener('LOW_STOCK_ALERT', (event: MessageEvent) => {
-        this.handleEvent('LOW_STOCK_ALERT', event.data);
-      });
-
-      this.eventSource.addEventListener('PURCHASE_ORDER_UPDATE', (event: MessageEvent) => {
-        this.handleEvent('PURCHASE_ORDER_UPDATE', event.data);
-      });
-
-      this.eventSource.onerror = () => {
-        this.disconnect();
-        this.scheduleReconnect(storeId);
-      };
-    } catch {
-      // In offline mode or preview without active backend, client remains functional
-    }
   }
 
   public disconnect() {
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
     }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

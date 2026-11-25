@@ -7,7 +7,7 @@ import {
   returnService,
   salesService,
 } from '@/src/services/posService';
-import { setApiAuthToken } from '@/src/services/apiClient';
+import { getApiAuthToken, setApiAuthToken } from '@/src/services/apiClient';
 import { realtimeClient } from '@/src/services/realtimeClient';
 import { calculateCartTotals, round2 } from '@/src/utils/format';
 import type {
@@ -57,7 +57,7 @@ interface POSContextValue {
   user: AuthUser | null;
   activeRoute: RouteId;
   setActiveRoute: (route: RouteId) => void;
-  login: (email: string, password: string) => { ok: boolean; error?: string };
+  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   loginAsRole: (role: 'manager' | 'cashier') => void;
   logout: () => void;
 
@@ -134,13 +134,7 @@ function nextId(prefix: string): string {
 export function POSProvider({ children }: { children: React.ReactNode }) {
   const initialSnapshot = useMemo(() => posMockService.getInitialSnapshot(), []);
 
-  const [user, setUser] = useState<AuthUser | null>({
-    id: 'emp-1',
-    name: 'Arvind Subramanian',
-    email: 'arvind@annapurnamart.in',
-    role: 'Store Manager',
-    employeeCode: 'RF-101',
-  });
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [activeRoute, setActiveRoute] = useState<RouteId>('dashboard');
 
   const [products, setProducts] = useState<Product[]>(initialSnapshot.products);
@@ -208,8 +202,45 @@ export function POSProvider({ children }: { children: React.ReactNode }) {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }, []);
 
+  // Restore authenticated session via HttpOnly cookie or in-memory token
+  React.useEffect(() => {
+    if (!import.meta.env.VITE_API_BASE_URL) return;
+    let cancelled = false;
+    authService
+      .getMe()
+      .then((me) => {
+        if (cancelled) return;
+        const roleMap: Record<string, AuthUser['role']> = {
+          ADMIN: 'Store Manager',
+          MANAGER: 'Store Manager',
+          CASHIER: 'Head Cashier',
+          INVENTORY_STAFF: 'Inventory Clerk',
+          ACCOUNTANT: 'Accountant',
+        };
+        const mappedRole = roleMap[me.role?.toUpperCase()] ?? 'Store Manager';
+        setUser({
+          id: me.id,
+          name: me.name,
+          email: me.email,
+          role: mappedRole,
+          employeeCode: me.employeeCode,
+        });
+        setActiveRoute(mappedRole === 'Head Cashier' ? 'pos' : 'dashboard');
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setApiAuthToken(null);
+          setUser(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Real-time synchronization across cashiers and browser sessions (Stage 9)
   React.useEffect(() => {
+    if (!user || !import.meta.env.VITE_API_BASE_URL) return;
     realtimeClient.connect('store-1');
 
     const unsubInventory = realtimeClient.on<any>('INVENTORY_UPDATE', (payload) => {
@@ -267,10 +298,10 @@ export function POSProvider({ children }: { children: React.ReactNode }) {
       unsubPO();
       realtimeClient.disconnect();
     };
-  }, [pushNotification]);
+  }, [user, pushNotification]);
 
   const login = useCallback(
-    (email: string, password: string) => {
+    async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
       const trimmedEmail = email.trim().toLowerCase();
       if (!trimmedEmail || !trimmedEmail.includes('@')) {
         return { ok: false, error: 'Enter a valid store email address.' };
@@ -278,6 +309,38 @@ export function POSProvider({ children }: { children: React.ReactNode }) {
       if (password.trim().length < 4) {
         return { ok: false, error: 'Password must be at least 4 characters.' };
       }
+
+      if (import.meta.env.VITE_API_BASE_URL) {
+        try {
+          const auth = await authService.login({ email: trimmedEmail, password });
+          setApiAuthToken(auth.accessToken);
+          const roleMap: Record<string, AuthUser['role']> = {
+            ADMIN: 'Store Manager',
+            MANAGER: 'Store Manager',
+            CASHIER: 'Head Cashier',
+            INVENTORY_STAFF: 'Inventory Clerk',
+            ACCOUNTANT: 'Accountant',
+          };
+          const mappedRole = roleMap[auth.user.role?.toUpperCase()] ?? 'Store Manager';
+          setUser({
+            id: auth.user.id,
+            name: auth.user.name,
+            email: auth.user.email,
+            role: mappedRole,
+            employeeCode: auth.user.employeeCode,
+          });
+          setActiveRoute(mappedRole === 'Head Cashier' ? 'pos' : 'dashboard');
+          addToast('Signed in to RetailFlow POS', 'success', `Welcome back, ${auth.user.name}.`);
+          return { ok: true };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unable to sign in.';
+          if (message.includes('API 401') || message.includes('API 403') || message.includes('API 400')) {
+            return { ok: false, error: 'Invalid email or password.' };
+          }
+          return { ok: false, error: message };
+        }
+      }
+
       const matched = employees.find(
         (e) => e.email.toLowerCase() === trimmedEmail && e.status === 'Active'
       );
@@ -325,8 +388,13 @@ export function POSProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    if (import.meta.env.VITE_API_BASE_URL) {
+      authService.logout().catch(() => {});
+    }
+    realtimeClient.disconnect();
     setApiAuthToken(null);
     setUser(null);
+    setNotifications([]);
     addToast('Signed out', 'info', 'Cashier terminal locked.');
   }, [addToast]);
 

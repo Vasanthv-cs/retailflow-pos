@@ -27,16 +27,19 @@ public class ReturnController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT')")
     public ApiResponse<List<ReturnRecord>> getReturns() {
         return ApiResponse.ok(returnService.getAllReturns());
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT')")
     public ApiResponse<ReturnRecord> getReturnById(@PathVariable String id) {
         return ApiResponse.ok(returnService.getReturnById(id));
     }
 
     @GetMapping("/by-invoice/{invoiceNumber}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER', 'ACCOUNTANT')")
     public ApiResponse<List<ReturnRecord>> getReturnsByInvoice(@PathVariable String invoiceNumber) {
         return ApiResponse.ok(returnService.getReturnsByInvoiceNumber(invoiceNumber));
     }

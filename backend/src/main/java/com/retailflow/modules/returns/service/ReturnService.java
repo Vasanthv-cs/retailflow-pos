@@ -2,6 +2,7 @@ package com.retailflow.modules.returns.service;
 
 import com.retailflow.common.exception.BusinessException;
 import com.retailflow.common.exception.ResourceNotFoundException;
+import com.retailflow.common.security.SecurityUtils;
 import com.retailflow.modules.catalog.entity.Product;
 import com.retailflow.modules.catalog.repository.ProductRepository;
 import com.retailflow.modules.inventory.entity.StockMovement;
@@ -51,12 +52,14 @@ public class ReturnService {
     public ReturnRecord processReturn(ReturnDto.ProcessReturnRequest req) {
         Sale sale = saleRepository.findById(req.getSaleId())
                 .orElseThrow(() -> new ResourceNotFoundException("Sale", req.getSaleId()));
+        SecurityUtils.assertStoreAccess(sale.getStoreId());
 
         String returnNumber = "RET-" + Year.now().getValue() + "-" + (1000 + (System.currentTimeMillis() % 9000));
         String refundRef = "REF-" + System.currentTimeMillis() % 100000;
 
         ReturnRecord returnRecord = new ReturnRecord();
         returnRecord.setId("ret-" + UUID.randomUUID().toString().substring(0, 8));
+        returnRecord.setStoreId(sale.getStoreId());
         returnRecord.setSaleId(sale.getId());
         returnRecord.setInvoiceNumber(sale.getInvoiceNumber());
         returnRecord.setReturnNumber(returnNumber);
@@ -171,17 +174,23 @@ public class ReturnService {
 
     @Transactional(readOnly = true)
     public List<ReturnRecord> getAllReturns() {
-        return returnRepository.findAllByOrderByDateDesc();
+        return returnRepository.findAllByOrderByDateDesc().stream()
+                .filter(r -> SecurityUtils.matchesCurrentStore(r.getStoreId()))
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public ReturnRecord getReturnById(String id) {
-        return returnRepository.findById(id)
+        ReturnRecord record = returnRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("ReturnRecord", id));
+        SecurityUtils.assertStoreAccess(record.getStoreId());
+        return record;
     }
 
     @Transactional(readOnly = true)
     public List<ReturnRecord> getReturnsByInvoiceNumber(String invoiceNumber) {
-        return returnRepository.findByInvoiceNumber(invoiceNumber.trim());
+        return returnRepository.findByInvoiceNumber(invoiceNumber.trim()).stream()
+                .filter(r -> SecurityUtils.matchesCurrentStore(r.getStoreId()))
+                .toList();
     }
 }

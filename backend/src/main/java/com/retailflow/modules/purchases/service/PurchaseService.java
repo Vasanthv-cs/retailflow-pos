@@ -2,6 +2,7 @@ package com.retailflow.modules.purchases.service;
 
 import com.retailflow.common.exception.BusinessException;
 import com.retailflow.common.exception.ResourceNotFoundException;
+import com.retailflow.common.security.SecurityUtils;
 import com.retailflow.modules.catalog.entity.Product;
 import com.retailflow.modules.catalog.repository.ProductRepository;
 import com.retailflow.modules.inventory.entity.StockMovement;
@@ -113,6 +114,7 @@ public class PurchaseService {
                 .collect(Collectors.toMap(Supplier::getId, Supplier::getName, (a, b) -> a));
 
         return pos.stream()
+                .filter(po -> SecurityUtils.matchesCurrentStore(po.getStoreId()))
                 .map(po -> PurchaseDtos.PurchaseOrderDto.fromEntity(po, supplierNameMap.getOrDefault(po.getSupplierId(), "Unknown Supplier")))
                 .collect(Collectors.toList());
     }
@@ -122,6 +124,7 @@ public class PurchaseService {
         Supplier supplier = getSupplierById(supplierId);
         List<PurchaseOrder> pos = purchaseOrderRepository.findBySupplierIdOrderByOrderDateDesc(supplierId);
         return pos.stream()
+                .filter(po -> SecurityUtils.matchesCurrentStore(po.getStoreId()))
                 .map(po -> PurchaseDtos.PurchaseOrderDto.fromEntity(po, supplier.getName()))
                 .collect(Collectors.toList());
     }
@@ -130,6 +133,7 @@ public class PurchaseService {
     public PurchaseDtos.PurchaseOrderDto getPurchaseOrderById(String id) {
         PurchaseOrder po = purchaseOrderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("PurchaseOrder", id));
+        SecurityUtils.assertStoreAccess(po.getStoreId());
         String supplierName = supplierRepository.findById(po.getSupplierId())
                 .map(Supplier::getName)
                 .orElse("Unknown Supplier");
@@ -146,7 +150,7 @@ public class PurchaseService {
 
         PurchaseOrder po = new PurchaseOrder();
         po.setId("po-" + UUID.randomUUID().toString().substring(0, 8));
-        po.setStoreId("store-1");
+        po.setStoreId(SecurityUtils.resolveStoreId(null));
         po.setSupplierId(supplier.getId());
         po.setPoNumber("PO-" + (1000 + (System.currentTimeMillis() % 90000)));
         po.setOrderDate(LocalDate.now());
@@ -160,6 +164,7 @@ public class PurchaseService {
         for (PurchaseDtos.CreateOrderItemRequest itemReq : req.getItems()) {
             Product product = productRepository.findById(itemReq.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product", itemReq.getProductId()));
+            SecurityUtils.assertStoreAccess(product.getStoreId());
 
             PurchaseOrderItem item = new PurchaseOrderItem();
             item.setId("poi-" + UUID.randomUUID().toString().substring(0, 8));
@@ -194,6 +199,7 @@ public class PurchaseService {
     public PurchaseDtos.PurchaseOrderDto receiveGoods(String poId, PurchaseDtos.ReceiveGoodsRequest req) {
         PurchaseOrder po = purchaseOrderRepository.findById(poId)
                 .orElseThrow(() -> new ResourceNotFoundException("PurchaseOrder", poId));
+        SecurityUtils.assertStoreAccess(po.getStoreId());
 
         if (po.getStatus() == PurchaseOrderStatus.RECEIVED) {
             throw new BusinessException("ALREADY_RECEIVED", "Purchase order " + po.getPoNumber() + " is already completely received");
@@ -291,6 +297,7 @@ public class PurchaseService {
     public PurchaseDtos.PurchaseOrderDto cancelPurchaseOrder(String id) {
         PurchaseOrder po = purchaseOrderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("PurchaseOrder", id));
+        SecurityUtils.assertStoreAccess(po.getStoreId());
 
         if (po.getStatus() == PurchaseOrderStatus.RECEIVED) {
             throw new BusinessException("CANNOT_CANCEL", "Cannot cancel an order that has already been completely received.");

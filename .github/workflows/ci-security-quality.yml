@@ -1,0 +1,145 @@
+name: RetailFlow POS — CI Security & Quality Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-quality:
+    name: Frontend Typecheck, Lint, Tests, Build & Audit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install pinned frontend dependencies
+        run: npm ci
+
+      - name: TypeScript typecheck & lint
+        run: npm run lint
+
+      - name: Run frontend unit & critical E2E workflow tests
+        run: npm test
+
+      - name: Production dependency vulnerability scan
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: http://localhost:8080/api/v1
+
+      - name: Upload frontend build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+          retention-days: 7
+
+  backend-security-and-tests:
+    name: Backend Build, Unit, Integration, Auth & MySQL Concurrency Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Compile backend & test sources
+        working-directory: backend
+        run: mvn -B compile test-compile
+
+      - name: Run unit, security/IDOR, and Testcontainers MySQL 8.0 concurrency & Flyway tests
+        working-directory: backend
+        env:
+          JWT_SECRET: CiPipelineTestSecretKeyAtLeast32BytesLongForHS256!
+        run: mvn -B test
+
+      - name: Upload backend Surefire test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: backend/target/surefire-reports/
+          retention-days: 14
+
+  security-scans:
+    name: Secret Scanning & Static Security Analysis (SAST)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scanning (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Initialize CodeQL (Java & JS/TS)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java, javascript-typescript
+
+      - name: Autobuild for CodeQL
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  docker-scan:
+    name: Docker Image Build & Trivy Vulnerability Scan
+    runs-on: ubuntu-24.04
+    needs: [frontend-quality, backend-security-and-tests]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build backend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          load: true
+          tags: retailflow-backend:ci-${{ github.sha }}
+
+      - name: Scan Docker image for Critical/High vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: retailflow-backend:ci-${{ github.sha }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+  release-gate:
+    name: Production Release Gate (Manual Promotion Required)
+    runs-on: ubuntu-24.04
+    needs: [frontend-quality, backend-security-and-tests, security-scans, docker-scan]
+    steps:
+      - name: Confirm all required security & quality checks passed
+        run: echo "All CI security, concurrency, migration, and quality checks passed. Ready for reviewed deployment."

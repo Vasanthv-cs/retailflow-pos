@@ -1,8 +1,10 @@
 package com.retailflow.modules.store.controller;
 
 import com.retailflow.common.api.ApiResponse;
+import com.retailflow.common.security.SecurityUtils;
 import com.retailflow.modules.store.entity.Store;
 import com.retailflow.modules.store.service.StoreService;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -17,11 +19,14 @@ public class StoreController {
 
     @GetMapping("/settings")
     public ApiResponse<Store> getSettings() {
-        return ApiResponse.ok(storeService.getStoreSettings("store-1"));
+        String storeId = SecurityUtils.resolveStoreId(null);
+        return ApiResponse.ok(storeService.getStoreSettings(storeId));
     }
 
     @PutMapping("/settings")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ApiResponse<Store> updateSettings(@RequestBody Store store) {
-        return ApiResponse.ok(storeService.updateStoreSettings("store-1", store), "Store settings updated successfully");
+        String storeId = SecurityUtils.resolveStoreId(null);
+        return ApiResponse.ok(storeService.updateStoreSettings(storeId, store), "Store settings updated successfully");
     }
 }

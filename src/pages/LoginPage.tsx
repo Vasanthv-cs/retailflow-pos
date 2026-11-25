@@ -1,21 +1,29 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ShoppingCart, Store, UserCheck } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, ShoppingCart, Store, UserCheck } from 'lucide-react';
 import { Button } from '@/src/components/ui/Button';
 import { usePOS } from '@/src/hooks/usePOS';
 
+const HAS_LIVE_BACKEND = Boolean(import.meta.env.VITE_API_BASE_URL);
+
 export function LoginPage() {
   const { login, loginAsRole, settings } = usePOS();
-  const [email, setEmail] = useState('arvind@annapurnamart.in');
-  const [password, setPassword] = useState('demo1234');
+  const [email, setEmail] = useState(HAS_LIVE_BACKEND ? '' : 'arvind@annapurnamart.in');
+  const [password, setPassword] = useState(HAS_LIVE_BACKEND ? '' : 'demo1234');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = login(email, password);
-    if (!res.ok) {
-      setError(res.error ?? 'Unable to sign in.');
-    } else {
-      setError('');
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const res = await login(email, password);
+      if (!res.ok) {
+        setError(res.error ?? 'Unable to sign in.');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -88,7 +96,11 @@ export function LoginPage() {
                 <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   id="login-email"
+                  name="email"
                   type="email"
+                  autoComplete="username"
+                  spellCheck={false}
+                  enterKeyHint="next"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -106,13 +118,24 @@ export function LoginPage() {
                 <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   id="login-password"
-                  type="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  enterKeyHint="done"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/15"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-10 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/15"
                   placeholder="Enter password"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
             </div>
 
@@ -122,40 +145,42 @@ export function LoginPage() {
               </p>
             )}
 
-            <Button type="submit" className="w-full" size="lg">
-              Sign In to RetailFlow
+            <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+              {isSubmitting ? 'Signing In...' : 'Sign In'}
             </Button>
           </form>
 
-          <div className="mt-6 border-t border-slate-200 pt-5">
-            <p className="text-xs font-medium text-slate-500 mb-3">Quick prototype entry</p>
-            <div className="grid grid-cols-2 gap-2.5">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => loginAsRole('manager')}
-                className="w-full h-9"
-              >
-                <UserCheck className="h-3.5 w-3.5 text-indigo-600" />
-                Store Manager
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => loginAsRole('cashier')}
-                className="w-full h-9"
-              >
-                <ShoppingCart className="h-3.5 w-3.5 text-indigo-600" />
-                Cashier Terminal
-              </Button>
+          {!HAS_LIVE_BACKEND && (
+            <div className="mt-6 border-t border-slate-200 pt-5">
+              <p className="text-xs font-medium text-slate-500 mb-3">Quick prototype entry</p>
+              <div className="grid grid-cols-2 gap-2.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loginAsRole('manager')}
+                  className="w-full h-9"
+                >
+                  <UserCheck className="h-3.5 w-3.5 text-indigo-600" />
+                  Store Manager
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loginAsRole('cashier')}
+                  className="w-full h-9"
+                >
+                  <ShoppingCart className="h-3.5 w-3.5 text-indigo-600" />
+                  Cashier Terminal
+                </Button>
+              </div>
+              <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
+                Frontend prototype using local browser state and sample data. No live database or real
+                payment gateway is connected.
+              </p>
             </div>
-            <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
-              Frontend prototype using local browser state and sample data. No live database or real
-              payment gateway is connected.
-            </p>
-          </div>
+          )}
         </div>
       </div>
     </div>

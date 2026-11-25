@@ -33,9 +33,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleValidationException(MethodArgumentNotValidException ex, HttpServletRequest request) {
         List<ErrorResponse.FieldErrorDetail> details = new ArrayList<>();
         for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
+            String fieldLower = fe.getField().toLowerCase();
+            Object safeRejected = (fieldLower.contains("password") || fieldLower.contains("secret") || fieldLower.contains("token"))
+                    ? "******"
+                    : fe.getRejectedValue();
             details.add(new ErrorResponse.FieldErrorDetail(
                     fe.getField(),
-                    fe.getRejectedValue(),
+                    safeRejected,
                     fe.getDefaultMessage()
             ));
         }
@@ -78,7 +82,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleGeneralException(Exception ex, HttpServletRequest request) {
         ErrorResponse response = new ErrorResponse(
                 "INTERNAL_ERROR",
-                ex.getMessage() != null ? ex.getMessage() : "An unexpected server error occurred",
+                "An unexpected server error occurred",
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 request.getRequestURI(),
                 null

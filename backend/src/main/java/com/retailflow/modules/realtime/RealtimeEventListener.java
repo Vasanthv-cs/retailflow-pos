@@ -18,8 +18,9 @@ public class RealtimeEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onInventoryChanged(RealtimeEvent.InventoryChangePayload payload) {
-        log.debug("Publishing real-time INVENTORY_UPDATE for product: {}", payload.getSku());
-        emitterManager.broadcastToStore("store-1", "INVENTORY_UPDATE", payload);
+        String storeId = payload.getStoreId() != null ? payload.getStoreId() : "store-1";
+        log.debug("Publishing real-time INVENTORY_UPDATE for product: {} in store: {}", payload.getSku(), storeId);
+        emitterManager.broadcastToStore(storeId, "INVENTORY_UPDATE", payload);
 
         if (payload.isLowStock()) {
             RealtimeEvent.LowStockAlertPayload alert = new RealtimeEvent.LowStockAlertPayload(
@@ -30,14 +31,15 @@ public class RealtimeEventListener {
                     payload.getLowStockThreshold(),
                     "Store Floor"
             );
-            emitterManager.broadcastToStore("store-1", "LOW_STOCK_ALERT", alert);
+            emitterManager.broadcastToStore(storeId, "LOW_STOCK_ALERT", alert);
         }
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onNewSale(RealtimeEvent.NewSalePayload payload) {
-        log.debug("Publishing real-time NEW_SALE for invoice: {}", payload.getInvoiceNumber());
-        emitterManager.broadcastToStore("store-1", "NEW_SALE", payload);
+        String storeId = payload.getStoreId() != null ? payload.getStoreId() : "store-1";
+        log.debug("Publishing real-time NEW_SALE for invoice: {} in store: {}", payload.getInvoiceNumber(), storeId);
+        emitterManager.broadcastToStore(storeId, "NEW_SALE", payload);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)

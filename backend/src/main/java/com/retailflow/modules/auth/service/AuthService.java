@@ -12,6 +12,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class AuthService {
@@ -21,6 +25,9 @@ public class AuthService {
     private final JwtTokenProvider tokenProvider;
 
     private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final int RATE_LIMIT_MAX_ATTEMPTS = 10;
+    private static final long RATE_LIMIT_WINDOW_MS = 60_000L;
+    private final Map<String, Deque<Long>> loginAttemptWindows = new ConcurrentHashMap<>();
 
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
@@ -30,9 +37,26 @@ public class AuthService {
         this.tokenProvider = tokenProvider;
     }
 
+    private void checkRateLimit(String key) {
+        long now = System.currentTimeMillis();
+        Deque<Long> timestamps = loginAttemptWindows.computeIfAbsent(key, k -> new ArrayDeque<>());
+        synchronized (timestamps) {
+            while (!timestamps.isEmpty() && now - timestamps.peekFirst() > RATE_LIMIT_WINDOW_MS) {
+                timestamps.pollFirst();
+            }
+            if (timestamps.size() >= RATE_LIMIT_MAX_ATTEMPTS) {
+                throw new BusinessException("RATE_LIMITED", "Too many login attempts. Please wait 1 minute before retrying.");
+            }
+            timestamps.addLast(now);
+        }
+    }
+
     @Transactional
     public AuthDtos.AuthResponse login(AuthDtos.LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail().trim().toLowerCase())
+        String identifier = request.getEmail().trim().toLowerCase();
+        checkRateLimit(identifier);
+
+        User user = userRepository.findByEmail(identifier)
                 .or(() -> userRepository.findByEmployeeCode(request.getEmail().trim()))
                 .orElseThrow(() -> new BusinessException("INVALID_CREDENTIALS", "Invalid email/employee code or password"));
 
@@ -44,10 +68,8 @@ public class AuthService {
             throw new BusinessException("ACCOUNT_INACTIVE", "Staff account is deactivated. Contact store management.");
         }
 
-        // 2. Password verification
-        boolean matches = passwordEncoder.matches(request.getPassword(), user.getPasswordHash())
-                || "Admin@1234".equals(request.getPassword())
-                || "demo1234".equals(request.getPassword()); // dev prototype compatibility fallback
+        // 2. Password verification (strict BCrypt only)
+        boolean matches = passwordEncoder.matches(request.getPassword(), user.getPasswordHash());
 
         if (!matches) {
             int failed = user.getFailedLoginAttempts() + 1;

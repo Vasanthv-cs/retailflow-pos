@@ -28,6 +28,7 @@ public class RealtimeEvent<T> {
     public void setData(T data) { this.data = data; }
 
     public static class InventoryChangePayload {
+        private String storeId = "store-1";
         private String productId;
         private String sku;
         private String productName;
@@ -56,6 +57,8 @@ public class RealtimeEvent<T> {
             this.reason = reason;
         }
 
+        public String getStoreId() { return storeId; }
+        public void setStoreId(String storeId) { this.storeId = storeId != null ? storeId : "store-1"; }
         public String getProductId() { return productId; }
         public String getSku() { return sku; }
         public String getProductName() { return productName; }
@@ -69,6 +72,7 @@ public class RealtimeEvent<T> {
     }
 
     public static class NewSalePayload {
+        private String storeId = "store-1";
         private String saleId;
         private String invoiceNumber;
         private String cashierId;
@@ -92,6 +96,8 @@ public class RealtimeEvent<T> {
             this.date = date;
         }
 
+        public String getStoreId() { return storeId; }
+        public void setStoreId(String storeId) { this.storeId = storeId != null ? storeId : "store-1"; }
         public String getSaleId() { return saleId; }
         public String getInvoiceNumber() { return invoiceNumber; }
         public String getCashierId() { return cashierId; }
@@ -103,6 +109,7 @@ public class RealtimeEvent<T> {
     }
 
     public static class LowStockAlertPayload {
+        private String storeId = "store-1";
         private String productId;
         private String sku;
         private String productName;
@@ -121,6 +128,8 @@ public class RealtimeEvent<T> {
             this.location = location;
         }
 
+        public String getStoreId() { return storeId; }
+        public void setStoreId(String storeId) { this.storeId = storeId != null ? storeId : "store-1"; }
         public String getProductId() { return productId; }
         public String getSku() { return sku; }
         public String getProductName() { return productName; }
@@ -130,6 +139,7 @@ public class RealtimeEvent<T> {
     }
 
     public static class PurchaseOrderUpdatePayload {
+        private String storeId = "store-1";
         private String poId;
         private String poNumber;
         private String supplierName;

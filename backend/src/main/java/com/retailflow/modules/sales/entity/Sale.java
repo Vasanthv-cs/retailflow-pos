@@ -23,8 +23,11 @@ public class Sale {
     @Column(name = "invoice_number", nullable = false, unique = true, length = 50)
     private String invoiceNumber;
 
-    @Column(name = "idempotency_key", length = 100)
+    @Column(name = "idempotency_key", unique = true, length = 100)
     private String idempotencyKey;
+
+    @Column(name = "request_hash", length = 64)
+    private String requestHash;
 
     @Column(nullable = false)
     private Instant date = Instant.now();
@@ -95,6 +98,8 @@ public class Sale {
     public void setInvoiceNumber(String invoiceNumber) { this.invoiceNumber = invoiceNumber; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
+    public String getRequestHash() { return requestHash; }
+    public void setRequestHash(String requestHash) { this.requestHash = requestHash; }
     public Instant getDate() { return date; }
     public void setDate(Instant date) { this.date = date; }
     public String getCustomerName() { return customerName; }

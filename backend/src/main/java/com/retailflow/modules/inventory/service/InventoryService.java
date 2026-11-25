@@ -2,6 +2,7 @@ package com.retailflow.modules.inventory.service;
 
 import com.retailflow.common.exception.BusinessException;
 import com.retailflow.common.exception.ResourceNotFoundException;
+import com.retailflow.common.security.SecurityUtils;
 import com.retailflow.modules.catalog.entity.Product;
 import com.retailflow.modules.catalog.repository.ProductRepository;
 import com.retailflow.modules.inventory.dto.InventoryDtos;
@@ -35,12 +36,8 @@ public class InventoryService {
 
     @Transactional(readOnly = true)
     public List<InventoryDtos.InventoryRecord> getInventoryRecords(String storeId) {
-        List<Product> products;
-        if (storeId != null && !storeId.isBlank()) {
-            products = productRepository.findByStoreId(storeId);
-        } else {
-            products = productRepository.findAll();
-        }
+        String effectiveStoreId = SecurityUtils.resolveStoreId(storeId);
+        List<Product> products = productRepository.findByStoreId(effectiveStoreId);
 
         return products.stream().map(p -> {
             int stock = p.getStockOnHand() != null ? p.getStockOnHand() : 0;
@@ -70,12 +67,8 @@ public class InventoryService {
 
     @Transactional(readOnly = true)
     public InventoryDtos.InventoryValuationSummary getValuationSummary(String storeId) {
-        List<Product> products;
-        if (storeId != null && !storeId.isBlank()) {
-            products = productRepository.findByStoreId(storeId);
-        } else {
-            products = productRepository.findAll();
-        }
+        String effectiveStoreId = SecurityUtils.resolveStoreId(storeId);
+        List<Product> products = productRepository.findByStoreId(effectiveStoreId);
 
         BigDecimal totalCostValuation = BigDecimal.ZERO;
         BigDecimal totalRetailValuation = BigDecimal.ZERO;
@@ -121,6 +114,7 @@ public class InventoryService {
     public Product adjustStock(InventoryDtos.StockAdjustmentRequest req) {
         Product product = productRepository.findById(req.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product", req.getProductId()));
+        SecurityUtils.assertStoreAccess(product.getStoreId());
 
         int prev = product.getStockOnHand() != null ? product.getStockOnHand() : 0;
         int next = prev + req.getDelta();
@@ -167,6 +161,7 @@ public class InventoryService {
     public Product transferStock(InventoryDtos.StockTransferRequest req) {
         Product product = productRepository.findById(req.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product", req.getProductId()));
+        SecurityUtils.assertStoreAccess(product.getStoreId());
 
         int stock = product.getStockOnHand() != null ? product.getStockOnHand() : 0;
         if (req.getQuantity() <= 0) {
@@ -202,8 +197,17 @@ public class InventoryService {
     @Transactional(readOnly = true)
     public List<StockMovement> getStockMovements(String productId) {
         if (productId != null && !productId.isBlank()) {
+            Product product = productRepository.findById(productId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
+            SecurityUtils.assertStoreAccess(product.getStoreId());
             return stockMovementRepository.findByProductIdOrderByCreatedAtDesc(productId);
         }
-        return stockMovementRepository.findAllByOrderByCreatedAtDesc();
+        String effectiveStoreId = SecurityUtils.resolveStoreId(null);
+        var allowedProductIds = productRepository.findByStoreId(effectiveStoreId).stream()
+                .map(Product::getId)
+                .collect(Collectors.toSet());
+        return stockMovementRepository.findAllByOrderByCreatedAtDesc().stream()
+                .filter(m -> allowedProductIds.contains(m.getProductId()))
+                .collect(Collectors.toList());
     }
 }

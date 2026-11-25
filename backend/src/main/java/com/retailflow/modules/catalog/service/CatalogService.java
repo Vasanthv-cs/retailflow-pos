@@ -3,6 +3,7 @@ package com.retailflow.modules.catalog.service;
 import com.retailflow.common.api.PageResponse;
 import com.retailflow.common.exception.BusinessException;
 import com.retailflow.common.exception.ResourceNotFoundException;
+import com.retailflow.common.security.SecurityUtils;
 import com.retailflow.modules.catalog.dto.ProductDtos;
 import com.retailflow.modules.catalog.entity.Category;
 import com.retailflow.modules.catalog.entity.Product;
@@ -76,19 +77,19 @@ public class CatalogService {
 
     @Transactional(readOnly = true)
     public List<ProductDtos.ProductResponseDto> getAllProducts(String query, String categoryId, String storeId) {
+        String effectiveStoreId = SecurityUtils.resolveStoreId(storeId);
         List<Product> products;
         if (query != null && !query.isBlank()) {
             products = productRepository.searchProducts(query.trim());
         } else if (categoryId != null && !categoryId.isBlank() && !"all".equalsIgnoreCase(categoryId)) {
             products = productRepository.findByCategoryId(categoryId);
-        } else if (storeId != null && !storeId.isBlank()) {
-            products = productRepository.findByStoreId(storeId);
         } else {
-            products = productRepository.findAll();
+            products = productRepository.findByStoreId(effectiveStoreId);
         }
 
         Map<String, String> categoryNames = getCategoryNameMap();
         return products.stream()
+                .filter(p -> SecurityUtils.matchesCurrentStore(p.getStoreId()))
                 .map(p -> ProductDtos.ProductResponseDto.fromEntity(p, categoryNames.getOrDefault(p.getCategoryId(), "General")))
                 .collect(Collectors.toList());
     }
@@ -97,13 +98,14 @@ public class CatalogService {
     public PageResponse<ProductDtos.ProductResponseDto> getPaginatedProducts(
             String query, String categoryId, String storeId, int page, int size, String sortBy, String direction) {
 
+        String effectiveStoreId = SecurityUtils.resolveStoreId(storeId);
         Sort sort = "desc".equalsIgnoreCase(direction) ? Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
         Page<Product> paged = productRepository.searchAndFilter(
                 (query != null && !query.isBlank()) ? query.trim() : null,
                 categoryId,
-                storeId,
+                effectiveStoreId,
                 pageable
         );
 
@@ -126,8 +128,10 @@ public class CatalogService {
 
     @Transactional(readOnly = true)
     public Product findProductEntity(String id) {
-        return productRepository.findById(id)
+        Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", id));
+        SecurityUtils.assertStoreAccess(product.getStoreId());
+        return product;
     }
 
     @Transactional(readOnly = true)
@@ -135,6 +139,7 @@ public class CatalogService {
         Product product = productRepository.findByBarcode(code)
                 .or(() -> productRepository.findBySku(code))
                 .orElseThrow(() -> new ResourceNotFoundException("Product", code));
+        SecurityUtils.assertStoreAccess(product.getStoreId());
 
         String categoryName = categoryRepository.findById(product.getCategoryId())
                 .map(Category::getName)
@@ -158,7 +163,7 @@ public class CatalogService {
 
         Product product = new Product();
         product.setId("prod-" + UUID.randomUUID().toString().substring(0, 8));
-        product.setStoreId(req.getStoreId() != null && !req.getStoreId().isBlank() ? req.getStoreId() : "store-1");
+        product.setStoreId(SecurityUtils.resolveStoreId(req.getStoreId()));
         product.setCategoryId(req.getCategoryId());
         product.setSupplierId(req.getSupplierId() != null ? req.getSupplierId() : "sup-1");
         product.setName(req.getName().trim());
@@ -205,7 +210,7 @@ public class CatalogService {
             product.setSupplierId(req.getSupplierId());
         }
         if (req.getStoreId() != null) {
-            product.setStoreId(req.getStoreId());
+            product.setStoreId(SecurityUtils.resolveStoreId(req.getStoreId()));
         }
         product.setSku(req.getSku().trim().toUpperCase());
         product.setBarcode(req.getBarcode() != null && !req.getBarcode().isBlank() ? req.getBarcode().trim() : null);
@@ -237,20 +242,14 @@ public class CatalogService {
 
     @Transactional
     public void deleteProduct(String id) {
-        if (!productRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Product", id);
-        }
-        productRepository.deleteById(id);
+        Product product = findProductEntity(id);
+        productRepository.delete(product);
     }
 
     @Transactional(readOnly = true)
     public List<ProductDtos.ProductResponseDto> getLowStockProducts(String storeId) {
-        List<Product> lowStock;
-        if (storeId != null && !storeId.isBlank()) {
-            lowStock = productRepository.findLowStockProductsByStore(storeId);
-        } else {
-            lowStock = productRepository.findLowStockProducts();
-        }
+        String effectiveStoreId = SecurityUtils.resolveStoreId(storeId);
+        List<Product> lowStock = productRepository.findLowStockProductsByStore(effectiveStoreId);
 
         Map<String, String> categoryNames = getCategoryNameMap();
         return lowStock.stream()

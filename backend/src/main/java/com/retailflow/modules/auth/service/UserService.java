@@ -3,6 +3,7 @@ package com.retailflow.modules.auth.service;
 import com.retailflow.common.api.PageResponse;
 import com.retailflow.common.exception.BusinessException;
 import com.retailflow.common.exception.ResourceNotFoundException;
+import com.retailflow.common.security.SecurityUtils;
 import com.retailflow.modules.auth.dto.AuthDtos;
 import com.retailflow.modules.auth.entity.Role;
 import com.retailflow.modules.auth.entity.RoleName;
@@ -38,6 +39,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<AuthDtos.UserResponseDto> getAllEmployees() {
         return userRepository.findAll().stream()
+                .filter(u -> SecurityUtils.matchesCurrentStore(u.getStoreId()))
                 .map(AuthDtos.UserResponseDto::fromEntity)
                 .toList();
     }
@@ -50,13 +52,18 @@ public class UserService {
                 status,
                 pageable
         );
-        return new PageResponse<>(page.map(AuthDtos.UserResponseDto::fromEntity));
+        List<AuthDtos.UserResponseDto> filtered = page.getContent().stream()
+                .filter(u -> SecurityUtils.matchesCurrentStore(u.getStoreId()))
+                .map(AuthDtos.UserResponseDto::fromEntity)
+                .toList();
+        return PageResponse.of(filtered, page.getNumber(), page.getSize(), page.getTotalElements());
     }
 
     @Transactional(readOnly = true)
     public AuthDtos.UserResponseDto getUserById(String id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        SecurityUtils.assertStoreAccess(user.getStoreId());
         return AuthDtos.UserResponseDto.fromEntity(user);
     }
 
@@ -74,6 +81,7 @@ public class UserService {
 
         User user = new User();
         user.setId("emp-" + UUID.randomUUID().toString().substring(0, 8));
+        user.setStoreId(SecurityUtils.resolveStoreId(null));
         user.setName(req.getName().trim());
         user.setEmail(req.getEmail().trim().toLowerCase());
         user.setEmployeeCode(req.getEmployeeCode().trim().toUpperCase());
@@ -92,6 +100,7 @@ public class UserService {
     public AuthDtos.UserResponseDto updateUser(String id, AuthDtos.UpdateUserRequest req) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        SecurityUtils.assertStoreAccess(user.getStoreId());
 
         Role role = roleRepository.findByName(req.getRole())
                 .orElseThrow(() -> new ResourceNotFoundException("Role", req.getRole().name()));
@@ -111,6 +120,7 @@ public class UserService {
     public AuthDtos.UserResponseDto updateUserStatus(String id, UserStatus newStatus) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        SecurityUtils.assertStoreAccess(user.getStoreId());
 
         // Prevent deactivating the last active administrator
         if (user.getRole().getName() == RoleName.ADMIN && newStatus != UserStatus.ACTIVE) {
@@ -135,6 +145,7 @@ public class UserService {
     public void resetPassword(String id, String temporaryPassword) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
+        SecurityUtils.assertStoreAccess(user.getStoreId());
 
         user.setPasswordHash(passwordEncoder.encode(temporaryPassword));
         user.setFailedLoginAttempts(0);

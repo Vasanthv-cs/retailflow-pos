@@ -1,5 +1,6 @@
 package com.retailflow.modules.realtime;
 
+import com.retailflow.common.security.SecurityUtils;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,12 +27,14 @@ public class NotificationEventController {
     public SseEmitter subscribe(
             @RequestParam(required = false, defaultValue = "store-1") String storeId,
             Authentication authentication) {
+        String effectiveStoreId = SecurityUtils.resolveStoreId(storeId);
         String userId = authentication != null ? authentication.getName() : "staff";
-        return emitterManager.registerClient(storeId, userId);
+        return emitterManager.registerClient(effectiveStoreId, userId);
     }
 
     @GetMapping("/active-listeners")
     public int getActiveListeners(@RequestParam(required = false, defaultValue = "store-1") String storeId) {
-        return emitterManager.getActiveListenerCount(storeId);
+        String effectiveStoreId = SecurityUtils.resolveStoreId(storeId);
+        return emitterManager.getActiveListenerCount(effectiveStoreId);
     }
 }

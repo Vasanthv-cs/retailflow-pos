@@ -1,6 +1,7 @@
 package com.retailflow.modules.sales.service;
 
 import com.retailflow.common.api.PageResponse;
+import com.retailflow.common.security.SecurityUtils;
 import com.retailflow.common.exception.BusinessException;
 import com.retailflow.common.exception.InsufficientStockException;
 import com.retailflow.common.exception.ResourceNotFoundException;
@@ -20,16 +21,24 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.Year;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -64,45 +73,69 @@ public class SalesService {
      */
     @Transactional(isolation = Isolation.READ_COMMITTED, rollbackFor = Exception.class)
     public CheckoutDto.SaleResponseDto completeCheckout(CheckoutDto.CheckoutRequest req) {
-        // 1. Idempotency Check
-        if (req.getIdempotencyKey() != null && !req.getIdempotencyKey().isBlank()) {
-            var existing = saleRepository.findByIdempotencyKey(req.getIdempotencyKey().trim());
-            if (existing.isPresent()) {
-                return CheckoutDto.SaleResponseDto.fromEntity(existing.get());
-            }
-        }
-
         if (req.getItems() == null || req.getItems().isEmpty()) {
             throw new BusinessException("EMPTY_CART", "Cannot checkout with an empty cart");
         }
 
-        // 2. Validate Items and Lock Products Pessimistically to Prevent Overselling
-        List<Product> products = new ArrayList<>();
+        String effectiveStoreId = SecurityUtils.resolveStoreId(req.getStoreId());
+        String trimmedKey = (req.getIdempotencyKey() != null && !req.getIdempotencyKey().isBlank())
+                ? req.getIdempotencyKey().trim()
+                : null;
+        String requestHash = computeRequestHash(req, effectiveStoreId);
+
+        // 1. Idempotency Check (with payload mismatch protection)
+        if (trimmedKey != null) {
+            var existing = saleRepository.findByIdempotencyKey(trimmedKey);
+            if (existing.isPresent()) {
+                Sale existingSale = existing.get();
+                SecurityUtils.assertStoreAccess(existingSale.getStoreId());
+                if (existingSale.getRequestHash() != null && !existingSale.getRequestHash().equals(requestHash)) {
+                    throw new BusinessException(
+                            "IDEMPOTENCY_KEY_REUSED",
+                            "Idempotency key cannot be reused for a different checkout request",
+                            HttpStatus.CONFLICT
+                    );
+                }
+                return CheckoutDto.SaleResponseDto.fromEntity(existingSale);
+            }
+        }
+
+        // 2. Aggregate quantities per product and lock in deterministic sorted order to prevent deadlocks
+        Map<String, Integer> orderedQtyByProduct = new TreeMap<>();
         for (CheckoutDto.CartItemRequest itemReq : req.getItems()) {
             if (itemReq.getQuantity() <= 0) {
                 throw new BusinessException("INVALID_QUANTITY", "Quantity must be greater than zero for product " + itemReq.getProductId());
             }
-
-            // Pessimistic write lock ensures serialized stock evaluation under high concurrency
-            Product product = productRepository.findByIdForUpdate(itemReq.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product", itemReq.getProductId()));
-
-            int stock = product.getStockOnHand() != null ? product.getStockOnHand() : 0;
-            if (stock < itemReq.getQuantity()) {
-                throw new InsufficientStockException(product.getName(), product.getSku(), itemReq.getQuantity(), stock);
-            }
-            products.add(product);
+            orderedQtyByProduct.merge(itemReq.getProductId(), itemReq.getQuantity(), Integer::sum);
         }
 
-        // 3. Generate Unique Invoice Number and Primary Key
-        String invoiceNumber = "INV-" + Year.now().getValue() + "-" + (10000 + (System.currentTimeMillis() % 90000));
+        Map<String, Product> lockedProducts = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> entry : orderedQtyByProduct.entrySet()) {
+            String productId = entry.getKey();
+            int requestedQty = entry.getValue();
+
+            // Pessimistic write lock ensures serialized stock evaluation under high concurrency
+            Product product = productRepository.findByIdForUpdate(productId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Product", productId));
+            SecurityUtils.assertStoreAccess(product.getStoreId());
+
+            int stock = product.getStockOnHand() != null ? product.getStockOnHand() : 0;
+            if (stock < requestedQty) {
+                throw new InsufficientStockException(product.getName(), product.getSku(), requestedQty, stock);
+            }
+            lockedProducts.put(productId, product);
+        }
+
+        // 3. Generate Collision-Free Invoice Number and Primary Key
+        String invoiceNumber = "INV-" + Year.now().getValue() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         String saleId = "sale-" + UUID.randomUUID().toString().substring(0, 8);
 
         Sale sale = new Sale();
         sale.setId(saleId);
-        sale.setStoreId(req.getStoreId() != null ? req.getStoreId() : "store-1");
+        sale.setStoreId(effectiveStoreId);
         sale.setInvoiceNumber(invoiceNumber);
-        sale.setIdempotencyKey(req.getIdempotencyKey());
+        sale.setIdempotencyKey(trimmedKey);
+        sale.setRequestHash(requestHash);
         sale.setCashierId(req.getCashierId() != null ? req.getCashierId() : "emp-1");
         sale.setCustomerName(req.getCustomerName() != null && !req.getCustomerName().isBlank() ? req.getCustomerName() : "Walk-in Customer");
         sale.setCustomerPhone(req.getCustomerPhone());
@@ -110,17 +143,17 @@ public class SalesService {
         sale.setPaymentReference(req.getPaymentReference());
         sale.setDate(Instant.now());
 
-        // 4. Recalculate Line Items, GST, and Decrement Stock
+        // 4. Recalculate Line Items, GST, and Atomically Decrement Stock
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal totalTax = BigDecimal.ZERO;
         BigDecimal estProfit = BigDecimal.ZERO;
         List<SaleItem> saleItems = new ArrayList<>();
 
-        for (int i = 0; i < req.getItems().size(); i++) {
-            CheckoutDto.CartItemRequest itemReq = req.getItems().get(i);
-            Product product = products.get(i);
+        for (Map.Entry<String, Integer> entry : orderedQtyByProduct.entrySet()) {
+            String productId = entry.getKey();
+            int qty = entry.getValue();
+            Product product = lockedProducts.get(productId);
 
-            int qty = itemReq.getQuantity();
             BigDecimal rate = product.getSellingPrice();
             BigDecimal cost = product.getPurchasePrice() != null ? product.getPurchasePrice() : BigDecimal.ZERO;
             BigDecimal gstRate = product.getGstRate() != null ? product.getGstRate() : BigDecimal.ZERO;
@@ -148,11 +181,14 @@ public class SalesService {
             item.setLineTotal(lineGross);
             saleItems.add(item);
 
-            // Decrement product inventory on hand
+            // Conditional atomic SQL stock decrement prevents negative inventory even under race conditions
             int prevStock = product.getStockOnHand();
+            int updatedRows = productRepository.decrementStockIfAvailable(product.getId(), qty);
+            if (updatedRows == 0) {
+                throw new InsufficientStockException(product.getName(), product.getSku(), qty, prevStock);
+            }
             int newStock = prevStock - qty;
             product.setStockOnHand(newStock);
-            productRepository.save(product);
 
             // Record immutable stock movement ledger entry
             StockMovement movement = new StockMovement(
@@ -252,10 +288,7 @@ public class SalesService {
             ));
 
             for (SaleItem item : savedSale.getItems()) {
-                Product p = products.stream()
-                        .filter(prod -> prod.getId().equals(item.getProductId()))
-                        .findFirst()
-                        .orElse(null);
+                Product p = lockedProducts.get(item.getProductId());
                 if (p != null) {
                     eventPublisher.publishEvent(new RealtimeEvent.InventoryChangePayload(
                             p.getId(),
@@ -286,7 +319,10 @@ public class SalesService {
             sales = saleRepository.findAllByOrderByDateDesc();
         }
 
-        return sales.stream().map(CheckoutDto.SaleResponseDto::fromEntity).collect(Collectors.toList());
+        return sales.stream()
+                .filter(s -> SecurityUtils.matchesCurrentStore(s.getStoreId()))
+                .map(CheckoutDto.SaleResponseDto::fromEntity)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -294,6 +330,7 @@ public class SalesService {
         Pageable pageable = PageRequest.of(page, size, Sort.by("date").descending());
         Page<Sale> paged = saleRepository.findAll(pageable);
         List<CheckoutDto.SaleResponseDto> dtos = paged.getContent().stream()
+                .filter(s -> SecurityUtils.matchesCurrentStore(s.getStoreId()))
                 .map(CheckoutDto.SaleResponseDto::fromEntity)
                 .collect(Collectors.toList());
         return PageResponse.of(dtos, paged.getNumber(), paged.getSize(), paged.getTotalElements());
@@ -303,6 +340,7 @@ public class SalesService {
     public CheckoutDto.SaleResponseDto getSaleById(String id) {
         Sale sale = saleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sale", id));
+        SecurityUtils.assertStoreAccess(sale.getStoreId());
         return CheckoutDto.SaleResponseDto.fromEntity(sale);
     }
 
@@ -310,6 +348,25 @@ public class SalesService {
     public CheckoutDto.SaleResponseDto getSaleByInvoiceNumber(String invoiceNumber) {
         Sale sale = saleRepository.findByInvoiceNumber(invoiceNumber.trim())
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice", invoiceNumber));
+        SecurityUtils.assertStoreAccess(sale.getStoreId());
         return CheckoutDto.SaleResponseDto.fromEntity(sale);
+    }
+
+    private String computeRequestHash(CheckoutDto.CheckoutRequest req, String storeId) {
+        Map<String, Integer> sorted = new TreeMap<>();
+        for (CheckoutDto.CartItemRequest item : req.getItems()) {
+            sorted.merge(item.getProductId(), item.getQuantity(), Integer::sum);
+        }
+        String canonical = storeId + "|" + sorted + "|" +
+                (req.getDiscountType() != null ? req.getDiscountType() : "percent") + "|" +
+                (req.getDiscountValue() != null ? req.getDiscountValue().stripTrailingZeros().toPlainString() : "0") + "|" +
+                (req.getPaymentMethod() != null ? req.getPaymentMethod() : "Cash");
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(canonical.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 }

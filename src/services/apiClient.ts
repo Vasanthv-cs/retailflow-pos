@@ -19,19 +19,19 @@ export interface ApiRequestOptions extends RequestInit {
 
 let storedAuthToken: string | null = null;
 
+// Purge any legacy token stored in localStorage from earlier versions
+if (typeof window !== 'undefined' && window.localStorage) {
+  window.localStorage.removeItem('retailflow_jwt');
+}
+
 export function setApiAuthToken(token: string | null) {
   storedAuthToken = token;
-  if (token) {
-    localStorage.setItem('retailflow_jwt', token);
-  } else {
-    localStorage.removeItem('retailflow_jwt');
+  if (!token && typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.removeItem('retailflow_jwt');
   }
 }
 
 export function getApiAuthToken(): string | null {
-  if (!storedAuthToken) {
-    storedAuthToken = localStorage.getItem('retailflow_jwt');
-  }
   return storedAuthToken;
 }
 
@@ -44,6 +44,7 @@ export async function apiRequest<T>(
 
   const response = await fetch(url, {
     ...rest,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

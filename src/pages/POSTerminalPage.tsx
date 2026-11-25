@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Banknote,
   Barcode,
+  Camera,
   CheckCircle2,
   CreditCard,
   Minus,
@@ -14,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/src/components/ui/Button';
+import { CameraScannerDialog } from '@/src/components/ui/CameraScannerDialog';
 import { Modal } from '@/src/components/ui/Modal';
 import { ProductThumbnail } from '@/src/components/ui/ProductThumbnail';
 import { ReceiptModal } from '@/src/components/ui/ReceiptModal';
@@ -42,6 +44,7 @@ export function POSTerminalPage() {
   const [paymentRef, setPaymentRef] = useState<string>('');
   const [checkoutError, setCheckoutError] = useState<string>('');
   const [completedReceipt, setCompletedReceipt] = useState<Sale | null>(null);
+  const [scannerOpen, setScannerOpen] = useState<boolean>(false);
 
   const barcodeRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -192,19 +195,30 @@ export function POSTerminalPage() {
     setPaymentModalOpen(true);
   }, [cart.length, totals.grandTotal, addToast]);
 
+  const processScannedCode = useCallback(
+    (rawCode: string) => {
+      const code = rawCode.trim().toLowerCase();
+      if (!code) return;
+      const match = activeProducts.find(
+        (p) => p.barcode.toLowerCase() === code || p.sku.toLowerCase() === code
+      );
+      if (!match) {
+        addToast('Barcode / SKU not found', 'error', `No active product matches "${rawCode.trim()}".`);
+      } else {
+        addToCart(match);
+        addToast('Added to bill', 'info', `${match.name} (${match.sku})`);
+      }
+    },
+    [activeProducts, addToCart, addToast]
+  );
+
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const code = barcodeInput.trim().toLowerCase();
-    if (!code) return;
-    const match = activeProducts.find(
-      (p) => p.barcode.toLowerCase() === code || p.sku.toLowerCase() === code
-    );
-    if (!match) {
-      addToast('Barcode / SKU not found', 'error', `No active product matches "${barcodeInput.trim()}".`);
-    } else {
-      addToCart(match);
-      addToast('Added to bill', 'info', `${match.name} (${match.sku})`);
+    if (!barcodeInput.trim()) {
+      setScannerOpen(true);
+      return;
     }
+    processScannedCode(barcodeInput);
     setBarcodeInput('');
   };
 
@@ -400,7 +414,8 @@ export function POSTerminalPage() {
                   className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 font-mono text-xs text-slate-900 placeholder:font-sans placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/15"
                 />
               </div>
-              <Button type="submit" variant="secondary" className="h-11 px-4">
+              <Button type="submit" variant="secondary" className="h-11 px-3.5">
+                <Camera className="h-4 w-4 sm:mr-1.5" />
                 Scan
               </Button>
             </form>
@@ -925,6 +940,15 @@ export function POSTerminalPage() {
       </Modal>
 
       <ReceiptModal sale={completedReceipt} onClose={() => setCompletedReceipt(null)} />
+
+      <CameraScannerDialog
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onDetected={(code) => {
+          setScannerOpen(false);
+          processScannedCode(code);
+        }}
+      />
     </div>
   );
 }
