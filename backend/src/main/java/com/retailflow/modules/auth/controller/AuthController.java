@@ -39,12 +39,12 @@ public class AuthController {
             @Valid @RequestBody AuthDtos.LoginRequest request,
             HttpServletResponse response) {
         AuthDtos.AuthResponse auth = authService.login(request);
-        ResponseCookie cookie = ResponseCookie.from(JwtAuthenticationFilter.AUTH_COOKIE_NAME, auth.getAccessToken())
+        ResponseCookie cookie = ResponseCookie.from(JwtAuthenticationFilter.AUTH_COOKIE_NAME, auth.getToken())
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("None")
                 .path("/api/v1")
-                .maxAge(Duration.ofSeconds(auth.getExpiresInSeconds()))
+                .maxAge(Duration.ofHours(24))
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
         return ApiResponse.ok(auth, "Signed in successfully");

@@ -65,6 +65,8 @@ public class Payment {
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
+    public String getStoreId() { return storeId; }
+    public void setStoreId(String storeId) { this.storeId = storeId; }
     public String getPaymentType() { return paymentType; }
     public void setPaymentType(String paymentType) { this.paymentType = paymentType; }
     public String getType() { return paymentType; }

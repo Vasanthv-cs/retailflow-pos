@@ -313,7 +313,7 @@ export function POSProvider({ children }: { children: React.ReactNode }) {
       if (import.meta.env.VITE_API_BASE_URL) {
         try {
           const auth = await authService.login({ email: trimmedEmail, password });
-          setApiAuthToken(auth.accessToken);
+          setApiAuthToken(auth.token);
           const roleMap: Record<string, AuthUser['role']> = {
             ADMIN: 'Store Manager',
             MANAGER: 'Store Manager',
@@ -321,16 +321,16 @@ export function POSProvider({ children }: { children: React.ReactNode }) {
             INVENTORY_STAFF: 'Inventory Clerk',
             ACCOUNTANT: 'Accountant',
           };
-          const mappedRole = roleMap[auth.user.role?.toUpperCase()] ?? 'Store Manager';
+          const mappedRole = roleMap[auth.role?.toUpperCase()] ?? 'Store Manager';
           setUser({
-            id: auth.user.id,
-            name: auth.user.name,
-            email: auth.user.email,
+            id: auth.userId,
+            name: auth.name,
+            email: auth.email,
             role: mappedRole,
-            employeeCode: auth.user.employeeCode,
+            employeeCode: auth.employeeCode,
           });
           setActiveRoute(mappedRole === 'Head Cashier' ? 'pos' : 'dashboard');
-          addToast('Signed in to RetailFlow POS', 'success', `Welcome back, ${auth.user.name}.`);
+          addToast('Signed in to RetailFlow POS', 'success', `Welcome back, ${auth.name}.`);
           return { ok: true };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unable to sign in.';

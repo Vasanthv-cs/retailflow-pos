@@ -166,17 +166,22 @@ export interface PaginatedResult<T> {
 }
 
 export interface AuthResponse {
-  accessToken: string;
+  token: string;
   tokenType: string;
-  expiresInSeconds: number;
-  user: {
-    id: string;
-    email: string;
-    name: string;
-    role: string;
-    employeeCode: string;
-    storeId: string;
-  };
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+  employeeCode: string;
+  storeId: string;
+}
+
+export interface AuthUserDto {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  employeeCode: string;
 }
 
 // -------------------------------------------------------------
@@ -186,7 +191,7 @@ export interface AuthResponse {
 export const authService = {
   login: (payload: { email: string; password: string }) =>
     apiClient.post<AuthResponse>('/auth/login', payload),
-  getMe: () => apiClient.get<AuthResponse['user']>('/auth/me'),
+  getMe: () => apiClient.get<AuthUserDto>('/auth/me'),
   logout: () => apiClient.post<void>('/auth/logout'),
   changePassword: (payload: { oldPassword: string; newPassword: string }) =>
     apiClient.post<void>('/auth/change-password', payload),
