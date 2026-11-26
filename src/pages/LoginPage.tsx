@@ -150,6 +150,34 @@ export function LoginPage() {
             </Button>
           </form>
 
+          {/* Client Demo Credentials Box */}
+          <div className="mt-5 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-indigo-950">Client Demo Credentials</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('demo@retailflow.in');
+                  setPassword('Demo@2026!');
+                  setError('');
+                }}
+                className="text-xs font-medium text-indigo-600 hover:text-indigo-700 underline underline-offset-2 cursor-pointer"
+              >
+                Auto-fill
+              </button>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded bg-white/80 px-2.5 py-1.5 border border-indigo-100">
+                <span className="block text-[10px] uppercase tracking-wider text-slate-400">Username</span>
+                <span className="font-mono text-slate-800 select-all">demo@retailflow.in</span>
+              </div>
+              <div className="rounded bg-white/80 px-2.5 py-1.5 border border-indigo-100">
+                <span className="block text-[10px] uppercase tracking-wider text-slate-400">Password</span>
+                <span className="font-mono text-slate-800 select-all">Demo@2026!</span>
+              </div>
+            </div>
+          </div>
+
           {!HAS_LIVE_BACKEND && (
             <div className="mt-6 border-t border-slate-200 pt-5">
               <p className="text-xs font-medium text-slate-500 mb-3">Quick prototype entry</p>

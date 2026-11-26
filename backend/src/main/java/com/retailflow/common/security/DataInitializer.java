@@ -84,5 +84,42 @@ public class DataInitializer implements CommandLineRunner {
             userRepository.save(admin);
             log.info("Initial administrator successfully bootstrapped: {}", adminEmail);
         }
+
+        // 3. Ensure primary owner admin account is provisioned
+        if (userRepository.findByEmail("vasanthvvt@gmail.com").isEmpty()) {
+            User ownerAdmin = new User();
+            ownerAdmin.setId("emp-admin-" + UUID.randomUUID().toString().substring(0, 8));
+            ownerAdmin.setStoreId("store-1");
+            ownerAdmin.setName("Vasanth V");
+            ownerAdmin.setEmail("vasanthvvt@gmail.com");
+            ownerAdmin.setEmployeeCode("ADMIN-002");
+            ownerAdmin.setPasswordHash(passwordEncoder.encode("Vasanth@0310"));
+            ownerAdmin.setPhone("+91 90000 00001");
+            ownerAdmin.setRole(adminRole);
+            ownerAdmin.setShift("Full Day (9 AM - 6 PM)");
+            ownerAdmin.setStatus(UserStatus.ACTIVE);
+            ownerAdmin.setJoinedDate(LocalDate.now());
+            userRepository.save(ownerAdmin);
+            log.info("Provisioned owner administrator account: vasanthvvt@gmail.com");
+        }
+
+        // 4. Ensure client-demo account is provisioned for product demonstrations
+        if (userRepository.findByEmail("demo@retailflow.in").isEmpty()) {
+            Role managerRole = roleRepository.findByName(RoleName.MANAGER).orElse(adminRole);
+            User demoUser = new User();
+            demoUser.setId("emp-demo-" + UUID.randomUUID().toString().substring(0, 8));
+            demoUser.setStoreId("store-1");
+            demoUser.setName("Demo Store Manager");
+            demoUser.setEmail("demo@retailflow.in");
+            demoUser.setEmployeeCode("DEMO-001");
+            demoUser.setPasswordHash(passwordEncoder.encode("Demo@2026!"));
+            demoUser.setPhone("+91 90000 00002");
+            demoUser.setRole(managerRole);
+            demoUser.setShift("Full Day (9 AM - 6 PM)");
+            demoUser.setStatus(UserStatus.ACTIVE);
+            demoUser.setJoinedDate(LocalDate.now());
+            userRepository.save(demoUser);
+            log.info("Provisioned client demo account: demo@retailflow.in");
+        }
     }
 }
