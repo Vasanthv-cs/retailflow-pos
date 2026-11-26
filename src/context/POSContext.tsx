@@ -202,9 +202,13 @@ export function POSProvider({ children }: { children: React.ReactNode }) {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }, []);
 
-  // Restore authenticated session via HttpOnly cookie or in-memory token
+  // Restore authenticated session only within an active browser tab session (cleared on browser/tab close)
   React.useEffect(() => {
     if (!import.meta.env.VITE_API_BASE_URL) return;
+    if (typeof window !== 'undefined' && window.sessionStorage.getItem('retailflow_session_active') !== '1') {
+      authService.logout().catch(() => {});
+      return;
+    }
     let cancelled = false;
     authService
       .getMe()
@@ -314,6 +318,9 @@ export function POSProvider({ children }: { children: React.ReactNode }) {
         try {
           const auth = await authService.login({ email: trimmedEmail, password });
           setApiAuthToken(auth.token);
+          if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem('retailflow_session_active', '1');
+          }
           const roleMap: Record<string, AuthUser['role']> = {
             ADMIN: 'Store Manager',
             MANAGER: 'Store Manager',
@@ -390,6 +397,9 @@ export function POSProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     if (import.meta.env.VITE_API_BASE_URL) {
       authService.logout().catch(() => {});
+    }
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('retailflow_session_active');
     }
     realtimeClient.disconnect();
     setApiAuthToken(null);

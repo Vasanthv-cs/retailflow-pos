@@ -44,7 +44,6 @@ public class AuthController {
                 .secure(true)
                 .sameSite("None")
                 .path("/api/v1")
-                .maxAge(Duration.ofHours(24))
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
         return ApiResponse.ok(auth, "Signed in successfully");
